@@ -1,0 +1,118 @@
+import pandas as pd
+from itertools import combinations
+
+# File path
+file_path = 'Dataset Ransomware.xlsx'
+
+# Loading the Excel sheets
+ransomware_gang_profile_df = pd.read_excel(file_path, sheet_name='Ransomware Gang Profile')
+ransomware_ttp_df = pd.read_excel(file_path, sheet_name='RANSOMWARE TTP')
+attacks_df = pd.read_excel(file_path, sheet_name='Dataset')
+
+# Step 1: Classifica delle TTP più utilizzate
+ttp_data = ransomware_ttp_df.iloc[1:, [1, 7]].copy()
+ttp_data.columns = ['Gang name', 'TTPS']
+
+# Separating TTP and removing missing values
+ttp_data['TTPS'] = ttp_data['TTPS'].str.split(',').apply(
+    lambda x: [item.strip() for item in x] if isinstance(x, list) else [])
+
+# Step 2: Statistiche per trimestre
+attacks_df['Date'] = pd.to_datetime(attacks_df['date'], errors='coerce')
+attacks_df['Quarter'] = attacks_df['Date'].dt.to_period('Q')
+attacks_df['Victim sectors'] = attacks_df['Victim sectors'].str.strip().str.lower().fillna('unknown')
+
+# Mapping gangs with TTP and victim sectors
+merged_data = pd.merge(attacks_df[['gang', 'Victim sectors', 'Quarter']], ttp_data, left_on='gang',
+                       right_on='Gang name', how='inner')
+merged_data = merged_data.explode('TTPS')
+
+# Step 3: Counting occurrences of each TTP by quarter
+ttp_by_quarter = merged_data.groupby(['Quarter', 'TTPS']).size().reset_index(name='Count')
+
+# Step 4: Counting occurrences of each TTP by industrial sector
+ttp_by_sector = merged_data.groupby(['Victim sectors', 'TTPS']).size().reset_index(name='Count')
+
+
+# Function to get the top N TTPs by sector
+def get_top_ttps_by_sector(sector_data, top_n=10):
+    return sector_data.nlargest(top_n, 'Count')
+
+
+# Getting the top TTPs for each sector with `include_groups=False` to suppress the warning
+top_ttps_by_sector = ttp_by_sector.groupby('Victim sectors', group_keys=False, as_index=False).apply(
+    lambda x: get_top_ttps_by_sector(x, top_n=5)
+)
+
+# Counting total occurrences of each TTP
+all_ttps = [ttp for sublist in ttp_data['TTPS'] for ttp in sublist if ttp]
+ttp_counts = pd.Series(all_ttps).value_counts().reset_index()
+ttp_counts.columns = ['TTP', 'Count']
+
+# Identifying gangs using each TTP
+gangs_by_ttp = ttp_data.explode('TTPS').groupby('TTPS')['Gang name'].apply(list).reset_index()
+
+# Merging TTP counts with gangs using them
+ttp_summary = pd.merge(ttp_counts, gangs_by_ttp, left_on='TTP', right_on='TTPS').drop('TTPS', axis=1)
+ttp_summary = ttp_summary.sort_values(by='Count', ascending=False)
+
+# Formatting the TTP ranking
+ttp_rankings = [
+    f"{index + 1}. {row['TTP']}: Usata da {row['Count']} gang: {', '.join(row['Gang name'])}"
+    for index, row in ttp_summary.iterrows()
+]
+
+# Step 5: Ranking similarity between ransomware gangs
+ttp_similarity_data = ransomware_ttp_df.iloc[1:, :].copy()
+ttp_similarity_data.columns = ransomware_ttp_df.iloc[0]
+
+gang_ttp_grouped = ttp_similarity_data.groupby("Gang name")["TTPS"].apply(lambda x: set(x.dropna())).reset_index()
+
+similarity_list = []
+for (i, row1), (j, row2) in combinations(gang_ttp_grouped.iterrows(), 2):
+    common_ttps = row1["TTPS"].intersection(row2["TTPS"])
+    total_ttps = row1["TTPS"].union(row2["TTPS"])
+    if len(total_ttps) > 0:
+        similarity_score = len(common_ttps) / len(total_ttps) * 100
+        if similarity_score > 0:
+            similarity_list.append(
+                (row1["Gang name"], row2["Gang name"], similarity_score, common_ttps)
+            )
+
+# Sorting similarity by descending order
+similarity_list.sort(key=lambda x: x[2], reverse=True)
+
+# Formatting similarity rankings
+similarity_rankings = [
+    f"{gang1} = {gang2} ({round(score, 2)}%): {', '.join(sorted(map(str, ttps)))}"
+    for gang1, gang2, score, ttps in similarity_list
+]
+
+# Saving all results to a CSV file
+output_file_path = 'ransomware_analysis_optimized.csv'
+with open(output_file_path, 'w') as file:
+    # Saving TTP rankings
+    file.write("Classifica delle TTP più utilizzate dalle gang ransomware:\n")
+    for line in ttp_rankings[:157]:
+        file.write(line + "\n")
+
+    # Saving gang similarity rankings
+    file.write("\nSimilarità tra gang ransomware basate sulle TTP:\n")
+    for line in similarity_rankings[:21609]:
+        file.write(line + "\n")
+
+    # Saving the quarterly statistics
+    file.write("\nStatistiche per trimestre:\n")
+    for quarter, group in ttp_by_quarter.groupby('Quarter'):
+        file.write(f"\nTTP nel trimestre {quarter}:\n")
+        for index, row in group.iterrows():
+            file.write(f"{row['TTPS']}: {row['Count']} occorrenze\n")
+
+    # Saving TTP by sector
+    file.write("\nTTP più utilizzate per settore industriale:\n")
+    for sector, group in top_ttps_by_sector.groupby('Victim sectors'):
+        file.write(f"\nSettore: {sector}\n")
+        for index, row in group.iterrows():
+            file.write(f"{row['TTPS']}: {row['Count']} occorrenze\n")
+
+print(f"File CSV '{output_file_path}' creato con successo.")
