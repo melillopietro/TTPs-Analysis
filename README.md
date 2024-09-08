@@ -1,5 +1,4 @@
-# TTPs-Analysis
-# Ransomware TTP Analysis
+# Ransomware TTPs Analysis
 
 ## Descrizione
 
