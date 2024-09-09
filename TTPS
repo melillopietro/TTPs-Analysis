@@ -1,5 +1,11 @@
 import pandas as pd
 from itertools import combinations
+import matplotlib.pyplot as plt
+import os
+
+# Creazione della cartella per salvare i plot se non esiste
+output_plot_dir = 'PlotsTTPS'
+os.makedirs(output_plot_dir, exist_ok=True)
 
 # File path
 file_path = 'Dataset Ransomware.xlsx'
@@ -88,7 +94,68 @@ similarity_rankings = [
     for gang1, gang2, score, ttps in similarity_list
 ]
 
-# Saving all results to a CSV file
+
+# Step 6: Plotting and saving the data
+# Plot delle TTP più utilizzate
+def plot_top_ttps(ttp_summary, top_n=10, save_path='PlotsTTPS/top_ttps.png'):
+    top_ttps = ttp_summary.head(top_n)
+    plt.figure(figsize=(10, 6))
+    plt.barh(top_ttps['TTP'], top_ttps['Count'], color='skyblue')
+    plt.xlabel('Occorrenze')
+    plt.ylabel('TTP')
+    plt.title(f'Top {top_n} TTP più utilizzate')
+    plt.gca().invert_yaxis()
+    plt.tight_layout()
+    plt.savefig(save_path)
+    plt.close()
+
+
+# Plot delle TTP per trimestre
+def plot_ttps_by_quarter(ttp_by_quarter, top_n=5, save_path='PlotsTTPS/ttps_by_quarter.png'):
+    top_ttps = ttp_by_quarter.groupby('TTPS')['Count'].sum().nlargest(top_n).index
+    filtered_data = ttp_by_quarter[ttp_by_quarter['TTPS'].isin(top_ttps)]
+
+    plt.figure(figsize=(10, 6))
+    for ttp in top_ttps:
+        data = filtered_data[filtered_data['TTPS'] == ttp]
+        plt.plot(data['Quarter'].astype(str), data['Count'], marker='o', label=ttp)
+
+    plt.xlabel('Trimestre')
+    plt.ylabel('Occorrenze')
+    plt.title(f'Trend delle {top_n} TTP più utilizzate per trimestre')
+    plt.xticks(rotation=45)
+    plt.legend(title='TTP')
+    plt.tight_layout()
+    plt.savefig(save_path)
+    plt.close()
+
+
+# Plot delle TTP per settore industriale
+def plot_ttps_by_sector(ttp_by_sector, top_n=5, save_path='PlotsTTPS/ttps_by_sector.png'):
+    top_ttps = ttp_by_sector.groupby('TTPS')['Count'].sum().nlargest(top_n).index
+    filtered_data = ttp_by_sector[ttp_by_sector['TTPS'].isin(top_ttps)]
+
+    plt.figure(figsize=(10, 6))
+    for ttp in top_ttps:
+        data = filtered_data[filtered_data['TTPS'] == ttp]
+        plt.bar(data['Victim sectors'], data['Count'], label=ttp)
+
+    plt.xlabel('Settore Industriale')
+    plt.ylabel('Occorrenze')
+    plt.title(f'Top {top_n} TTP per settore industriale')
+    plt.xticks(rotation=45)
+    plt.legend(title='TTP')
+    plt.tight_layout()
+    plt.savefig(save_path)
+    plt.close()
+
+
+# Esecuzione dei grafici e salvataggio nelle rispettive cartelle
+plot_top_ttps(ttp_summary, top_n=10, save_path=os.path.join(output_plot_dir, 'top_ttps.png'))
+plot_ttps_by_quarter(ttp_by_quarter, top_n=5, save_path=os.path.join(output_plot_dir, 'ttps_by_quarter.png'))
+plot_ttps_by_sector(ttp_by_sector, top_n=5, save_path=os.path.join(output_plot_dir, 'ttps_by_sector.png'))
+
+# Step 7: Saving all results to a CSV file
 output_file_path = 'ransomware_analysis_optimized.csv'
 with open(output_file_path, 'w') as file:
     # Saving TTP rankings
